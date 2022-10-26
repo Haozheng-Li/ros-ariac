@@ -1,0 +1,3 @@
+<launch> 
+    <node name= "ariac_simulation_node" pkg= "ariac_simulation" type= "ariac_simulation_node" output= "screen"/> 
+</launch> 
