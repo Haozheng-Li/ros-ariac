@@ -17,13 +17,15 @@ std_srvs::SetBool my_bool_var;
 std::vector<osrf_gear::Order> order_vector;
 std::vector<osrf_gear::LogicalCameraImage> logic_camera_bin_vector;
 
-osrf_gear::LogicalCameraImage cameramessage;
 osrf_gear::GetMaterialLocations get_loc_message;
+osrf_gear::LogicalCameraImage camera_message;
 
 geometry_msgs::TransformStamped tfStamped;
 geometry_msgs::PoseStamped part_pose, goal_pose;
 
-int loginc_camera_num [6] = {1, 2, 3, 4, 5, 6};
+int total_logic_camera_num = 6;
+bool show_first_product_msg_once = true;
+bool has_shown_frist_order_msg = false;
 
 
 void orderCallback(const osrf_gear::Order::ConstPtr& msg)
@@ -36,7 +38,6 @@ void cameraCallback(const osrf_gear::LogicalCameraImage::ConstPtr& msg, int came
     logic_camera_bin_vector[camera_num] = *msg;
 }
 
-
 int main(int argc, char **argv)
 {
     ros::init(argc, argv, "ariac_simulation");
@@ -44,7 +45,7 @@ int main(int argc, char **argv)
     // Init the node
     ros::NodeHandle n;
 
-    // Init listener
+    // Init listener and buffer
     tf2_ros::Buffer tfBuffer;
     tf2_ros::TransformListener tfListener(tfBuffer);
 
@@ -54,6 +55,7 @@ int main(int argc, char **argv)
     logic_camera_bin_vector.resize(6);
 
     int service_call_succeeded;
+    int get_loc_call_succeeded;
 
     std::string logical_camera_name;
     ros::Subscriber camera_sub[6];
@@ -62,13 +64,13 @@ int main(int argc, char **argv)
 
     // Init ServiceClient
     ros::ServiceClient begin_client = n.serviceClient<std_srvs::Trigger>("/ariac/start_competition");
-    ros::ServiceClient material_location_client = n.serviceClient<osrf_gear::GetMaterialLocations>("/ariac/material_locations");
+    ros::ServiceClient get_loc_client = n.serviceClient<osrf_gear::GetMaterialLocations>("/ariac/material_locations");
 
     // Init subscriber
     ros::Subscriber order_sub = n.subscribe("/ariac/orders", 1000, orderCallback);
 
     // We have 6 logical camera bin, so we need to create 6 callback
-    for(int i=0; i < 6; i++)
+    for(int i=0; i < total_logic_camera_num; i++)
     {
         logical_camera_name = "/ariac/logical_camera_bin" + std::to_string(i);
         camera_sub[i] = n.subscribe<osrf_gear::LogicalCameraImage>(logical_camera_name, 10, boost::bind(cameraCallback, _1, i));
@@ -78,7 +80,7 @@ int main(int argc, char **argv)
     service_call_succeeded = begin_client.call(begin_comp);
     if(service_call_succeeded == 0)
     {
-        ROS_ERROR("Competition service call failed!, Please shut down and restart");
+        ROS_ERROR("Competition service call failed!, Please check the competion service!!!!");
     }
     else
     {
@@ -95,14 +97,36 @@ int main(int argc, char **argv)
     // Set the frequency of loop in the node
     ros::Rate loop_rate(10);
 
-    while (ros::ok())
+    while (ros::ok() && service_call_succeeded)
     {
         if (order_vector.size() > 0)
         {
             osrf_gear::Order first_order = order_vector[0];
             osrf_gear::Shipment first_shipment = first_order.shipments[0];
             osrf_gear::Product first_product = first_shipment.products[0];
-            ROS_INFO("Received order successfully! The  first product type is:%s", first_product.type.c_str());
+            get_loc_message.request.material_type = first_product.type;
+            get_loc_call_succeeded = get_loc_client.call(get_loc_message);
+
+            ROS_INFO("Received order successfully! The  first product type is: {%s}", first_product.type.c_str());
+            
+            if (get_loc_call_succeeded){
+                ROS_INFO("The storage locations of the material type {%s} is: {%s}", first_product.type.c_str(), get_loc_message.response.storage_units[0].unit_id.c_str());
+                // Serach all logic camera data
+                for (int j=0; j<total_logic_camera_num; j++)
+                {
+                    camera_message = logic_camera_bin_vector[j];
+                    for (int k=0; k<camera_message.models.size(); k++)
+                    {
+                        osrf_gear::Model product_mode = camera_message.models[k];
+                        if (first_product.type == product_mode.type)
+                        {
+                            ROS_INFO("The position of the first product's type is: [x = %f, y = %f, z = %f]",product_mode.pose.position.x,product_mode.pose.position.y,product_mode.pose.position.z);
+                            ROS_INFO("The orientation of the material type is: [qx = %f, qy = %f, qz = %f, qw = %f]",product_mode.pose.orientation.x, product_mode.pose.orientation.y, product_mode.pose.orientation.z, product_mode.pose.orientation.w);
+                        }
+                    }
+                }
+            }
+
         }
 
         // try
