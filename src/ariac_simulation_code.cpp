@@ -15,7 +15,7 @@ std_srvs::Trigger begin_comp;
 std_srvs::SetBool my_bool_var;
 
 std::vector<osrf_gear::Order> order_vector;
-std::vector<osrf_gear::LogicalCameraImage> logic_camera_bin_vector, logic_camera_agv_vector;
+std::vector<osrf_gear::LogicalCameraImage> logic_camera_bin_vector, logic_camera_agv_vector, quality_control_sensor_vector;
 
 osrf_gear::GetMaterialLocations get_loc_message;
 osrf_gear::LogicalCameraImage camera_message;
@@ -25,6 +25,7 @@ geometry_msgs::PoseStamped part_pose, goal_pose;
 
 int total_logical_camera_bin_num = 6;
 int total_logical_camera_agv_num = 2;
+int total_quality_control_sensor_num = 2;
 bool show_first_product_msg_once = true;
 bool has_shown_frist_order_msg = false;
 
@@ -42,6 +43,11 @@ void binCameraCallback(const osrf_gear::LogicalCameraImage::ConstPtr& msg, int b
 void agvCameraCallback(const osrf_gear::LogicalCameraImage::ConstPtr& msg, int agv_camera_num)
 {
     logic_camera_agv_vector[agv_camera_num] = *msg;
+}
+
+void qualityCameraCallback(const osrf_gear::LogicalCameraImage::ConstPtr& msg, int quality_camera_num)
+{
+    quality_control_sensor_vector[quality_camera_num] = *msg;
 }
 
 int main(int argc, char **argv)
@@ -86,6 +92,12 @@ int main(int argc, char **argv)
     {
         logical_camera_name = "/ariac/logical_camera_agv" + std::to_string(i);
         camera_sub[i] = n.subscribe<osrf_gear::LogicalCameraImage>(logical_camera_name, 10, boost::bind(agvCameraCallback, _1, i));
+    }
+
+        for(int i=0; i < total_quality_control_sensor_num; i++)
+    {
+        logical_camera_name = "/ariac/quality_control_sensor_" + std::to_string(i);
+        camera_sub[i] = n.subscribe<osrf_gear::LogicalCameraImage>(logical_camera_name, 10, boost::bind(qualityCameraCallback, _1, i));
     }
 
     // Service call status
