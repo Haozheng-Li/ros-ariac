@@ -39,9 +39,9 @@ void binCameraCallback(const osrf_gear::LogicalCameraImage::ConstPtr& msg, int b
     logic_camera_bin_vector[bin_camera_num] = *msg;
 }
 
-void agvCameraCallback(const osrf_gear::LogicalCameraImage::ConstPtr& msg, int camera_num)
+void agvCameraCallback(const osrf_gear::LogicalCameraImage::ConstPtr& msg, int agv_camera_num)
 {
-    logic_camera_agv_vector[camera_num] = *msg;
+    logic_camera_agv_vector[agv_camera_num] = *msg;
 }
 
 int main(int argc, char **argv)
