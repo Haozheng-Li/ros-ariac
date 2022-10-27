@@ -122,31 +122,34 @@ int main(int argc, char **argv)
                         {
                             ROS_INFO("The position of the first product's type is: [x = %f, y = %f, z = %f]",product_mode.pose.position.x,product_mode.pose.position.y,product_mode.pose.position.z);
                             ROS_INFO("The orientation of the material type is: [qx = %f, qy = %f, qz = %f, qw = %f]",product_mode.pose.orientation.x, product_mode.pose.orientation.y, product_mode.pose.orientation.z, product_mode.pose.orientation.w);
+                            
+                            try {
+                                tfStamped = tfBuffer.lookupTransform("arm1_base_frame", "logical_camera_frame",
+                                ros::Time(0.0), ros::Duration(1.0));
+                                ROS_DEBUG("Transform to [%s] from [%s]", tfStamped.header.frame_id.c_str(),
+                                tfStamped.child_frame_id.c_str());
+                            } 
+                            catch (tf2::TransformException &ex) {
+                                ROS_ERROR("%s", ex.what());
+                            }
+
+                            // Transform coordinate 
+                            part_pose.pose = product_mode.pose;
+                            tf2::doTransform(part_pose, goal_pose, tfStamped);
+
+                            // Fix the position
+                            goal_pose.pose.position.z += 0.10; // 10 cm above the part
+                            goal_pose.pose.orientation.w = 0.707;
+                            goal_pose.pose.orientation.x = 0.0;
+                            goal_pose.pose.orientation.y = 0.707;
+                            goal_pose.pose.orientation.z = 0.0;
+                            break;
                         }
                     }
                 }
             }
 
         }
-
-        // try
-        // {
-        //     tfStamped = tfBuffer.lookupTransform("arm1_base_frame", "logical_camera_frame", ros::Time(0.0), ros::Duration(1.0));
-        //     ROS_DEBUG("Transform to [%s] from [%s]", tfStamped.header.frame_id.c_str(),
-        //     tfStamped.child_frame_id.c_str());
-        // } 
-        // catch (tf2::TransformException &ex)
-        // {
-        //     ROS_ERROR("%s", ex.what());
-        // }
-
-        // Fix the position
-        goal_pose.pose.position.z += 0.10; // 10 cm above the part
-        goal_pose.pose.orientation.w = 0.707;
-        goal_pose.pose.orientation.x = 0.0;
-        goal_pose.pose.orientation.y = 0.707;
-        goal_pose.pose.orientation.z = 0.0;
-
 
         ros::spinOnce();
         loop_rate.sleep();
