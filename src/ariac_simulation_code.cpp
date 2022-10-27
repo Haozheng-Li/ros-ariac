@@ -15,7 +15,7 @@ std_srvs::Trigger begin_comp;
 std_srvs::SetBool my_bool_var;
 
 std::vector<osrf_gear::Order> order_vector;
-std::vector<osrf_gear::LogicalCameraImage> logic_camera_bin_vector;
+std::vector<osrf_gear::LogicalCameraImage> logic_camera_bin_vector, logic_camera_agv_vector;
 
 osrf_gear::GetMaterialLocations get_loc_message;
 osrf_gear::LogicalCameraImage camera_message;
@@ -23,7 +23,8 @@ osrf_gear::LogicalCameraImage camera_message;
 geometry_msgs::TransformStamped tfStamped;
 geometry_msgs::PoseStamped part_pose, goal_pose;
 
-int total_logic_camera_num = 6;
+int total_logical_camera_bin_num = 6;
+int total_logical_camera_agv_num = 2;
 bool show_first_product_msg_once = true;
 bool has_shown_frist_order_msg = false;
 
@@ -33,9 +34,14 @@ void orderCallback(const osrf_gear::Order::ConstPtr& msg)
     order_vector.push_back(*msg);
 }
 
-void cameraCallback(const osrf_gear::LogicalCameraImage::ConstPtr& msg, int camera_num)
+void binCameraCallback(const osrf_gear::LogicalCameraImage::ConstPtr& msg, int bin_camera_num)
 {
-    logic_camera_bin_vector[camera_num] = *msg;
+    logic_camera_bin_vector[bin_camera_num] = *msg;
+}
+
+void agvCameraCallback(const osrf_gear::LogicalCameraImage::ConstPtr& msg, int camera_num)
+{
+    logic_camera_agv_vector[camera_num] = *msg;
 }
 
 int main(int argc, char **argv)
@@ -62,8 +68,6 @@ int main(int argc, char **argv)
 
     my_bool_var.request.data = true;
 
-
-
     // Init ServiceClient
     ros::ServiceClient begin_client = n.serviceClient<std_srvs::Trigger>("/ariac/start_competition");
     ros::ServiceClient get_loc_client = n.serviceClient<osrf_gear::GetMaterialLocations>("/ariac/material_locations");
@@ -72,10 +76,16 @@ int main(int argc, char **argv)
     ros::Subscriber order_sub = n.subscribe("/ariac/orders", 1000, orderCallback);
 
     // We have 6 logical camera bin, so we need to create 6 callback
-    for(int i=0; i < total_logic_camera_num; i++)
+    for(int i=0; i < total_logical_camera_bin_num; i++)
     {
         logical_camera_name = "/ariac/logical_camera_bin" + std::to_string(i);
-        camera_sub[i] = n.subscribe<osrf_gear::LogicalCameraImage>(logical_camera_name, 10, boost::bind(cameraCallback, _1, i));
+        camera_sub[i] = n.subscribe<osrf_gear::LogicalCameraImage>(logical_camera_name, 10, boost::bind(binCameraCallback, _1, i));
+    }
+
+    for(int i=0; i < total_logical_camera_agv_num; i++)
+    {
+        logical_camera_name = "/ariac/logical_camera_agv" + std::to_string(i);
+        camera_sub[i] = n.subscribe<osrf_gear::LogicalCameraImage>(logical_camera_name, 10, boost::bind(agvCameraCallback, _1, i));
     }
 
     // Service call status
@@ -114,7 +124,7 @@ int main(int argc, char **argv)
             if (get_loc_call_succeeded){
                 ROS_INFO_ONCE("The storage location of the material type [%s] is: [%s]", first_product.type.c_str(), get_loc_message.response.storage_units[0].unit_id.c_str());
                 // Serach all logic camera data
-                for (int j=0; j<total_logic_camera_num; j++)
+                for (int j=0; j<total_logical_camera_bin_num; j++)
                 {
                     camera_message = logic_camera_bin_vector[j];
                     for (int k=0; k<camera_message.models.size(); k++)
