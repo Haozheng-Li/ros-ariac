@@ -57,10 +57,12 @@ int main(int argc, char **argv)
     int service_call_succeeded;
     int get_loc_call_succeeded;
 
-    std::string logical_camera_name;
+    std::string logical_camera_name, logical_camera_bin_frame;
     ros::Subscriber camera_sub[6];
 
     my_bool_var.request.data = true;
+
+
 
     // Init ServiceClient
     ros::ServiceClient begin_client = n.serviceClient<std_srvs::Trigger>("/ariac/start_competition");
@@ -107,10 +109,10 @@ int main(int argc, char **argv)
             get_loc_message.request.material_type = first_product.type;
             get_loc_call_succeeded = get_loc_client.call(get_loc_message);
 
-            ROS_INFO("Received order successfully! The  first product type is: {%s}", first_product.type.c_str());
+            // ROS_INFO("Received order successfully! The  first product type is: {%s}", first_product.type.c_str());
             
             if (get_loc_call_succeeded){
-                ROS_INFO("The storage locations of the material type {%s} is: {%s}", first_product.type.c_str(), get_loc_message.response.storage_units[0].unit_id.c_str());
+                // ROS_INFO("The storage locations of the material type {%s} is: {%s}", first_product.type.c_str(), get_loc_message.response.storage_units[0].unit_id.c_str());
                 // Serach all logic camera data
                 for (int j=0; j<total_logic_camera_num; j++)
                 {
@@ -120,14 +122,14 @@ int main(int argc, char **argv)
                         osrf_gear::Model product_mode = camera_message.models[k];
                         if (first_product.type == product_mode.type)
                         {
-                            ROS_INFO("The position of the first product's type is: [x = %f, y = %f, z = %f]",product_mode.pose.position.x,product_mode.pose.position.y,product_mode.pose.position.z);
-                            ROS_INFO("The orientation of the material type is: [qx = %f, qy = %f, qz = %f, qw = %f]",product_mode.pose.orientation.x, product_mode.pose.orientation.y, product_mode.pose.orientation.z, product_mode.pose.orientation.w);
+                            // ROS_INFO("The position of the first product's type is: [x = %f, y = %f, z = %f]",product_mode.pose.position.x,product_mode.pose.position.y,product_mode.pose.position.z);
+                            // ROS_INFO("The orientation of the material type is: [qx = %f, qy = %f, qz = %f, qw = %f]",product_mode.pose.orientation.x, product_mode.pose.orientation.y, product_mode.pose.orientation.z, product_mode.pose.orientation.w);
                             
+                            logical_camera_bin_frame = "logical_camera_bin" + std::to_string(j) +"_frame";
+
                             try {
-                                tfStamped = tfBuffer.lookupTransform("arm1_base_frame", "logical_camera_frame",
-                                ros::Time(0.0), ros::Duration(1.0));
-                                ROS_DEBUG("Transform to [%s] from [%s]", tfStamped.header.frame_id.c_str(),
-                                tfStamped.child_frame_id.c_str());
+                                tfStamped = tfBuffer.lookupTransform("arm1_base_link", logical_camera_bin_frame, ros::Time(0.0), ros::Duration(1.0));
+                                ROS_DEBUG("Transform to [%s] from [%s]", tfStamped.header.frame_id.c_str(), tfStamped.child_frame_id.c_str());
                             } 
                             catch (tf2::TransformException &ex) {
                                 ROS_ERROR("%s", ex.what());
@@ -143,6 +145,7 @@ int main(int argc, char **argv)
                             goal_pose.pose.orientation.x = 0.0;
                             goal_pose.pose.orientation.y = 0.707;
                             goal_pose.pose.orientation.z = 0.0;
+                            ROS_WARN_ONCE("The pose of corrected location of first product:[x=%f],[y=%f],[z=%f]",goal_pose.pose.position.x, goal_pose.pose.position.y, goal_pose.pose.position.z);
                             break;
                         }
                     }
