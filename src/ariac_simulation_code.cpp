@@ -17,17 +17,14 @@ std_srvs::SetBool my_bool_var;
 std::vector<osrf_gear::Order> order_vector;
 std::vector<osrf_gear::LogicalCameraImage> logic_camera_bin_vector;
 
-tf2_ros::Buffer tfBuffer;
-tf2_ros::TransformListener tfListener(tfBuffer);
-
 osrf_gear::LogicalCameraImage cameramessage;
+osrf_gear::GetMaterialLocations get_loc_message;
 
 geometry_msgs::TransformStamped tfStamped;
 geometry_msgs::PoseStamped part_pose, goal_pose;
 
 int loginc_camera_num [6] = {1, 2, 3, 4, 5, 6};
 
-// my_bool_var.request.data = true;
 
 void orderCallback(const osrf_gear::Order::ConstPtr& msg)
 {
@@ -42,10 +39,14 @@ void cameraCallback(const osrf_gear::LogicalCameraImage::ConstPtr& msg, int came
 
 int main(int argc, char **argv)
 {
-    ros::init(argc, argv, "ariac_simulation_node");
+    ros::init(argc, argv, "ariac_simulation");
    
     // Init the node
     ros::NodeHandle n;
+
+    // Init listener
+    tf2_ros::Buffer tfBuffer;
+    tf2_ros::TransformListener tfListener(tfBuffer);
 
     // Init variables
     order_vector.clear();
@@ -56,6 +57,8 @@ int main(int argc, char **argv)
 
     std::string logical_camera_name;
     ros::Subscriber camera_sub[6];
+
+    my_bool_var.request.data = true;
 
     // Init ServiceClient
     ros::ServiceClient begin_client = n.serviceClient<std_srvs::Trigger>("/ariac/start_competition");
@@ -96,19 +99,22 @@ int main(int argc, char **argv)
     {
         if (order_vector.size() > 0)
         {
-
+            osrf_gear::Order first_order = order_vector[0];
+            osrf_gear::Shipment first_shipment = first_order.shipments[0];
+            osrf_gear::Product first_product = first_shipment.products[0];
+            ROS_INFO("Received order successfully! The  first product type is:%s", first_product.type.c_str());
         }
 
-        try
-        {
-            tfStamped = tfBuffer.lookupTransform("arm1_base_frame", "logical_camera_frame", ros::Time(0.0), ros::Duration(1.0));
-            ROS_DEBUG("Transform to [%s] from [%s]", tfStamped.header.frame_id.c_str(),
-            tfStamped.child_frame_id.c_str());
-        } 
-        catch (tf2::TransformException &ex)
-        {
-            ROS_ERROR("%s", ex.what());
-        }
+        // try
+        // {
+        //     tfStamped = tfBuffer.lookupTransform("arm1_base_frame", "logical_camera_frame", ros::Time(0.0), ros::Duration(1.0));
+        //     ROS_DEBUG("Transform to [%s] from [%s]", tfStamped.header.frame_id.c_str(),
+        //     tfStamped.child_frame_id.c_str());
+        // } 
+        // catch (tf2::TransformException &ex)
+        // {
+        //     ROS_ERROR("%s", ex.what());
+        // }
 
         // Fix the position
         goal_pose.pose.position.z += 0.10; // 10 cm above the part
