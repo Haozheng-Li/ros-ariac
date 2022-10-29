@@ -45,9 +45,9 @@ void agvCameraCallback(const osrf_gear::LogicalCameraImage::ConstPtr& msg, int a
     logic_camera_agv_vector[agv_camera_num] = *msg;
 }
 
-void qualityCameraCallback(const osrf_gear::LogicalCameraImage::ConstPtr& msg, int quality_camera_num)
+void qualityCameraCallback(const osrf_gear::LogicalCameraImage::ConstPtr& quality_msg, int quality_camera_num)
 {
-    quality_control_sensor_vector[quality_camera_num] = *msg;
+    quality_control_sensor_vector[quality_camera_num] = *quality_msg;
 }
 
 int main(int argc, char **argv)
@@ -65,12 +65,17 @@ int main(int argc, char **argv)
     order_vector.clear();
     logic_camera_bin_vector.clear();
     logic_camera_bin_vector.resize(6);
+    logic_camera_agv_vector.clear();
+    logic_camera_agv_vector.resize(2);
+    quality_control_sensor_vector.clear();
+    quality_control_sensor_vector.resize(2);
 
     int service_call_succeeded;
     int get_loc_call_succeeded;
 
     std::string logical_camera_name, logical_camera_bin_frame;
     ros::Subscriber camera_sub[6];
+    
 
     my_bool_var.request.data = true;
 
@@ -88,17 +93,11 @@ int main(int argc, char **argv)
         camera_sub[i] = n.subscribe<osrf_gear::LogicalCameraImage>(logical_camera_name, 10, boost::bind(binCameraCallback, _1, i));
     }
 
-    for(int i=0; i < total_logical_camera_agv_num; i++)
-    {
-        logical_camera_name = "/ariac/logical_camera_agv" + std::to_string(i);
-        camera_sub[i] = n.subscribe<osrf_gear::LogicalCameraImage>(logical_camera_name, 10, boost::bind(agvCameraCallback, _1, i));
-    }
+    ros:: Subscriber agv_camera_sub1 = n.subscribe<osrf_gear::LogicalCameraImage>("/ariac/logical_camera_agv1", 10, boost::bind(agvCameraCallback, _1, 0));
+    ros:: Subscriber agv_camera_sub2 = n.subscribe<osrf_gear::LogicalCameraImage>("/ariac/logical_camera_agv2", 10, boost::bind(agvCameraCallback, _1, 1));
 
-        for(int i=0; i < total_quality_control_sensor_num; i++)
-    {
-        logical_camera_name = "/ariac/quality_control_sensor_" + std::to_string(i);
-        camera_sub[i] = n.subscribe<osrf_gear::LogicalCameraImage>(logical_camera_name, 10, boost::bind(qualityCameraCallback, _1, i));
-    }
+    ros:: Subscriber quality_camera_sub1 = n.subscribe<osrf_gear::LogicalCameraImage>("/ariac/quality_control_sensor_1", 10, boost::bind(qualityCameraCallback, _1, 0));
+    ros:: Subscriber quality_camera_sub2 = n.subscribe<osrf_gear::LogicalCameraImage>("/ariac/quality_control_sensor_2", 10, boost::bind(qualityCameraCallback, _1, 1));
 
     // Service call status
     service_call_succeeded = begin_client.call(begin_comp);
