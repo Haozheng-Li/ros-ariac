@@ -2,6 +2,8 @@
 
 ## Launch this lab
 
+### Dependencies
+
 # Documention of how this lab works
 
 ## 1. Subscriber settings
