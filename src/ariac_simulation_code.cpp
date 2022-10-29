@@ -76,7 +76,6 @@ int main(int argc, char **argv)
     std::string logical_camera_name, logical_camera_bin_frame;
     ros::Subscriber camera_sub[6];
     
-
     my_bool_var.request.data = true;
 
     // Init ServiceClient
