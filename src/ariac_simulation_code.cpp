@@ -9,7 +9,13 @@
 
 #include "tf2_ros/transform_listener.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.h"
+
 #include "geometry_msgs/TransformStamped.h"
+
+#include "ur_kinematics/ur_kin.h"
+#include "sensor_msgs/JointState.h"
+#include "trajectory_msgs/JointTrajectory.h"
+
 
 std_srvs::Trigger begin_comp;
 std_srvs::SetBool my_bool_var;
@@ -23,6 +29,8 @@ osrf_gear::LogicalCameraImage camera_message;
 geometry_msgs::TransformStamped tfStamped;
 geometry_msgs::PoseStamped part_pose, goal_pose;
 
+sensor_msgs::JointState joint_states;
+
 int total_logical_camera_bin_num = 6;
 int total_logical_camera_agv_num = 2;
 int total_quality_control_sensor_num = 2;
@@ -35,6 +43,7 @@ void orderCallback(const osrf_gear::Order::ConstPtr& msg)
     order_vector.push_back(*msg);
 }
 
+// Camera callback
 void binCameraCallback(const osrf_gear::LogicalCameraImage::ConstPtr& msg, int bin_camera_num)
 {
     logic_camera_bin_vector[bin_camera_num] = *msg;
@@ -48,6 +57,11 @@ void agvCameraCallback(const osrf_gear::LogicalCameraImage::ConstPtr& msg, int a
 void qualityCameraCallback(const osrf_gear::LogicalCameraImage::ConstPtr& quality_msg, int quality_camera_num)
 {
     quality_control_sensor_vector[quality_camera_num] = *quality_msg;
+}
+
+// Joint state callback
+void jointStateCallback(const sensor_msgs::JointState::ConstPtr& msgs){
+  joint_states = *msgs;
 }
 
 int main(int argc, char **argv)
@@ -73,8 +87,12 @@ int main(int argc, char **argv)
     int service_call_succeeded;
     int get_loc_call_succeeded;
 
+    double T_pose[4][4], T_des[4][4];
+    double q_pose[6], q_des[8][6];
+
     std::string logical_camera_name, logical_camera_bin_frame;
     ros::Subscriber camera_sub[6];
+    trajectory_msgs::JointTrajectory desired;
     
     my_bool_var.request.data = true;
 
@@ -83,7 +101,8 @@ int main(int argc, char **argv)
     ros::ServiceClient get_loc_client = n.serviceClient<osrf_gear::GetMaterialLocations>("/ariac/material_locations");
 
     // Init subscriber
-    ros::Subscriber order_sub = n.subscribe("/ariac/orders", 1000, orderCallback);
+    ros::Subscriber order_sub = n.subscribe("/ariac/orders", 10, orderCallback);
+    ros::Subscriber joint_states_sub = n.subscribe("ariac/arm1/joint_states", 10, jointStateCallback);
 
     // We have 6 logical camera bin, so we need to create 6 callback
     for(int i=0; i < total_logical_camera_bin_num; i++)
@@ -117,10 +136,27 @@ int main(int argc, char **argv)
     }
 
     // Set the frequency of loop in the node
-    ros::Rate loop_rate(10);
+    ros::Rate loop_rate(10);    // f=10HZ, period=100ms
 
     while (ros::ok() && service_call_succeeded)
     {
+        // Lab6 start
+        // std::string joint_state_msg = "Joint states" + joint_states.name;
+
+        ROS_INFO_THROTTLE(10, "test, Joint State name=%s", "test"); //100*100ms=10s
+        // q_pose[0] = joint_states.position[1];
+        // q_pose[1] = joint_states.position[2];
+        // q_pose[2] = joint_states.position[3];
+        // q_pose[3] = joint_states.position[4];
+        // q_pose[4] = joint_states.position[5];
+        // q_pose[5] = joint_states.position[6];
+        // ur_kinematics::forward((double *)&q_pose, (double *)&T_pose);
+
+        // T_des[0][3] = desired.pose.position.x;
+        // T_des[1][3] = desired.pose.position.y;
+        // T_des[2][3] = desired.pose.position.z + 0.3; // above part
+        // T_des[3][3] = 1.0;
+
         if (order_vector.size() > 0)
         {
             osrf_gear::Order first_order = order_vector[0];
