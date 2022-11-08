@@ -86,6 +86,7 @@ int main(int argc, char **argv)
 
     int service_call_succeeded;
     int get_loc_call_succeeded;
+    bool find_product_succeeded = false;
 
     double T_pose[4][4], T_des[4][4];
     double q_pose[6], q_des[8][6];
@@ -141,21 +142,21 @@ int main(int argc, char **argv)
     while (ros::ok() && service_call_succeeded)
     {
         // Lab6 start
-        // std::string joint_state_msg = "Joint states" + joint_states.name;
+        if (find_product_succeeded){
+            ROS_INFO_THROTTLE(10, "Joint State msg time=%d", joint_states.header.stamp.sec); //100*100ms=10s
+            q_pose[0] = joint_states.position[1];
+            q_pose[1] = joint_states.position[2];
+            q_pose[2] = joint_states.position[3];
+            q_pose[3] = joint_states.position[4];
+            q_pose[4] = joint_states.position[5];
+            q_pose[5] = joint_states.position[6];
+            ur_kinematics::forward((double *)&q_pose, (double *)&T_pose);
 
-        ROS_INFO_THROTTLE(10, "test, Joint State name=%s", "test"); //100*100ms=10s
-        // q_pose[0] = joint_states.position[1];
-        // q_pose[1] = joint_states.position[2];
-        // q_pose[2] = joint_states.position[3];
-        // q_pose[3] = joint_states.position[4];
-        // q_pose[4] = joint_states.position[5];
-        // q_pose[5] = joint_states.position[6];
-        // ur_kinematics::forward((double *)&q_pose, (double *)&T_pose);
-
-        // T_des[0][3] = desired.pose.position.x;
-        // T_des[1][3] = desired.pose.position.y;
-        // T_des[2][3] = desired.pose.position.z + 0.3; // above part
-        // T_des[3][3] = 1.0;
+            // T_des[0][3] = desired.pose.position.x;
+            // T_des[1][3] = desired.pose.position.y;
+            // T_des[2][3] = desired.pose.position.z + 0.3; // above part
+            // T_des[3][3] = 1.0;
+        }
 
         if (order_vector.size() > 0)
         {
@@ -175,11 +176,12 @@ int main(int argc, char **argv)
                     camera_message = logic_camera_bin_vector[j];
                     for (int k=0; k<camera_message.models.size(); k++)
                     {
-                        osrf_gear::Model product_mode = camera_message.models[k];
-                        if (first_product.type == product_mode.type)
+                        osrf_gear::Model product_model = camera_message.models[k];
+                        if (first_product.type == product_model.type)
                         {
-                            ROS_INFO_ONCE("The position of the first product's type is: [x = %f, y = %f, z = %f]",product_mode.pose.position.x,product_mode.pose.position.y,product_mode.pose.position.z);
-                            ROS_INFO_ONCE("The orientation of the material type is: [qx = %f, qy = %f, qz = %f, qw = %f]",product_mode.pose.orientation.x, product_mode.pose.orientation.y, product_mode.pose.orientation.z, product_mode.pose.orientation.w);
+                            find_product_succeeded = true;
+                            ROS_INFO_ONCE("The position of the first product's type is: [x = %f, y = %f, z = %f]",product_model.pose.position.x,product_model.pose.position.y,product_model.pose.position.z);
+                            ROS_INFO_ONCE("The orientation of the material type is: [qx = %f, qy = %f, qz = %f, qw = %f]",product_model.pose.orientation.x, product_model.pose.orientation.y, product_model.pose.orientation.z, product_model.pose.orientation.w);
                             
                             logical_camera_bin_frame = "logical_camera_bin" + std::to_string(j) +"_frame";
 
@@ -192,7 +194,7 @@ int main(int argc, char **argv)
                             }
 
                             // Transform coordinate 
-                            part_pose.pose = product_mode.pose;
+                            part_pose.pose = product_model.pose;
                             tf2::doTransform(part_pose, goal_pose, tfStamped);
 
                             // Fix the position
@@ -207,7 +209,6 @@ int main(int argc, char **argv)
                     }
                 }
             }
-
         }
 
         ros::spinOnce();
