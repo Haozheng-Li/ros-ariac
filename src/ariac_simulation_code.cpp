@@ -84,17 +84,17 @@ int main(int argc, char **argv)
     quality_control_sensor_vector.clear();
     quality_control_sensor_vector.resize(2);
 
+    int count = 0;
+    int action_count = 0;
     int service_call_succeeded;
     int get_loc_call_succeeded;
     bool find_product_succeeded = false;
 
-    double T_pose[4][4], T_des[4][4];
-    double q_pose[6], q_des[8][6];
-
     std::string logical_camera_name, logical_camera_bin_frame;
     ros::Subscriber camera_sub[6];
-    trajectory_msgs::JointTrajectory desired;
-    
+    trajectory_msgs::JointTrajectoryPoint desired;
+    trajectory_msgs::JointTrajectory joint_trajectory;
+
     my_bool_var.request.data = true;
 
     // Init ServiceClient
@@ -141,23 +141,6 @@ int main(int argc, char **argv)
 
     while (ros::ok() && service_call_succeeded)
     {
-        // Lab6 start
-        if (find_product_succeeded){
-            ROS_INFO_THROTTLE(10, "Joint State msg time=%d", joint_states.header.stamp.sec); //100*100ms=10s
-            q_pose[0] = joint_states.position[1];
-            q_pose[1] = joint_states.position[2];
-            q_pose[2] = joint_states.position[3];
-            q_pose[3] = joint_states.position[4];
-            q_pose[4] = joint_states.position[5];
-            q_pose[5] = joint_states.position[6];
-            ur_kinematics::forward((double *)&q_pose, (double *)&T_pose);
-
-            // T_des[0][3] = desired.pose.position.x;
-            // T_des[1][3] = desired.pose.position.y;
-            // T_des[2][3] = desired.pose.position.z + 0.3; // above part
-            // T_des[3][3] = 1.0;
-        }
-
         if (order_vector.size() > 0)
         {
             osrf_gear::Order first_order = order_vector[0];
@@ -203,12 +186,84 @@ int main(int argc, char **argv)
                             goal_pose.pose.orientation.x = 0.0;
                             goal_pose.pose.orientation.y = 0.707;
                             goal_pose.pose.orientation.z = 0.0;
-                            ROS_WARN_ONCE("The pose position of transformed location of first product:[x=%f],[y=%f],[z=%f]",goal_pose.pose.position.x, goal_pose.pose.position.y, goal_pose.pose.position.z);
+                            ROS_WARN_ONCE("The goal pose infomation will show below");
+                            ROS_WARN_STREAM_ONCE(goal_pose);
                             break;
                         }
                     }
                 }
             }
+        }
+
+        // Lab6 !!!
+        if (find_product_succeeded)
+        {
+            double T_pose[4][4], T_des[4][4];
+            double q_pose[6], q_des[8][6];
+
+            ROS_INFO_THROTTLE(10, "joint_states position status:[%f, %f, %f, %f, %f, %f]", joint_states.position[0], joint_states.position[1], 
+            joint_states.position[2], joint_states.position[3], joint_states.position[4], joint_states.position[5]); //100*100ms=10s
+            
+            q_pose[0] = joint_states.position[1];
+            q_pose[1] = joint_states.position[2];
+            q_pose[2] = joint_states.position[3];
+            q_pose[3] = joint_states.position[4];
+            q_pose[4] = joint_states.position[5];
+            q_pose[5] = joint_states.position[6];
+            ur_kinematics::forward((double *)&q_pose, (double *)&T_pose);
+
+
+            T_des[0][3] = goal_pose.pose.position.x;
+            T_des[1][3] = goal_pose.pose.position.y;
+            T_des[2][3] = goal_pose.pose.position.z + 0.3; // above part
+            T_des[3][3] = 1.0;
+
+            T_des[0][0] = 0.0; T_des[0][1] = -1.0; T_des[0][2] = 0.0;
+            T_des[1][0] = 0.0; T_des[1][1] = 0.0; T_des[1][2] = 1.0;
+            T_des[2][0] = -1.0; T_des[2][1] = 0.0; T_des[2][2] = 0.0;
+            T_des[3][0] = 0.0; T_des[3][1] = 0.0; T_des[3][2] = 0.0;
+
+            int num_sols = ur_kinematics::inverse((double *)&T_des, (double *)&q_des);
+
+            joint_trajectory.header.seq = count++;
+            joint_trajectory.header.stamp = ros::Time::now();
+            joint_trajectory.header.frame_id = "/world";
+
+            joint_trajectory.joint_names.clear();
+            joint_trajectory.joint_names.push_back("linear_arm_actuator_joint");
+            joint_trajectory.joint_names.push_back("shoulder_pan_joint");
+            joint_trajectory.joint_names.push_back("shoulder_lift_joint");
+            joint_trajectory.joint_names.push_back("elbow_joint");
+            joint_trajectory.joint_names.push_back("wrist_1_joint");
+            joint_trajectory.joint_names.push_back("wrist_2_joint");
+            joint_trajectory.joint_names.push_back("wrist_3_joint");
+
+            // Set a start and end point.
+            joint_trajectory.points.resize(2);
+            joint_trajectory.points[0].positions.resize(joint_trajectory.joint_names.size());
+            for(int indy = 0; indy < joint_trajectory.joint_names.size(); indy++){
+                for(int indz = 0; indz < joint_states.name.size(); indz++) {
+                    if(joint_trajectory.joint_names[indy] == joint_states.name[indz]) {
+                        joint_trajectory.points[0].positions[indy] = joint_states.position[indz];
+                        break;
+                    }
+                }
+            }
+            // When to start (immediately upon receipt).
+            joint_trajectory.points[0].time_from_start = ros::Duration(0.0);
+
+            // Must select which of the num_sols solutions to use. Just start with the first.
+            int q_des_indx = 0;
+            // Set the end point for the movement
+            joint_trajectory.points[1].positions.resize(joint_trajectory.joint_names.size());
+            // Set the linear_arm_actuator_joint from joint_states as it is not part of the inverse kinematics solution.
+            joint_trajectory.points[1].positions[0] = joint_states.position[1];
+            // The actuators are commanded in an odd order, enter the joint positions in the correct positions
+            for (int indy = 0; indy < 6; indy++) {
+            joint_trajectory.points[1].positions[indy + 1] = q_des[q_des_indx][indy];
+            }
+            // How long to take for the movement.
+            joint_trajectory.points[1].time_from_start = ros::Duration(1.0);
         }
 
         ros::spinOnce();
