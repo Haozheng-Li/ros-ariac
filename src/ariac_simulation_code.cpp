@@ -16,9 +16,11 @@
 #include "sensor_msgs/JointState.h"
 #include "trajectory_msgs/JointTrajectory.h"
 
+#include "actionlib/client/simple_action_client.h"
+#include "actionlib/client/terminal_state.h"
+#include "control_msgs/FollowJointTrajectoryAction.h"
 
 std_srvs::Trigger begin_comp;
-std_srvs::SetBool my_bool_var;
 
 std::vector<osrf_gear::Order> order_vector;
 std::vector<osrf_gear::LogicalCameraImage> logic_camera_bin_vector, logic_camera_agv_vector, quality_control_sensor_vector;
@@ -94,12 +96,14 @@ int main(int argc, char **argv)
     ros::Subscriber camera_sub[6];
     trajectory_msgs::JointTrajectoryPoint desired;
     trajectory_msgs::JointTrajectory joint_trajectory;
-
-    my_bool_var.request.data = true;
+    
+    control_msgs::FollowJointTrajectoryAction joint_trajectory_as;
 
     // Init ServiceClient
     ros::ServiceClient begin_client = n.serviceClient<std_srvs::Trigger>("/ariac/start_competition");
     ros::ServiceClient get_loc_client = n.serviceClient<osrf_gear::GetMaterialLocations>("/ariac/material_locations");
+
+    actionlib::SimpleActionClient<control_msgs::FollowJointTrajectoryAction>trajectory_as("ariac/arm/follow_joint_trajectory", true);
 
     // Init subscriber
     ros::Subscriber order_sub = n.subscribe("/ariac/orders", 10, orderCallback);
@@ -163,8 +167,8 @@ int main(int argc, char **argv)
                         if (first_product.type == product_model.type)
                         {
                             find_product_succeeded = true;
-                            ROS_INFO_ONCE("The position of the first product's type is: [x = %f, y = %f, z = %f]",product_model.pose.position.x,product_model.pose.position.y,product_model.pose.position.z);
-                            ROS_INFO_ONCE("The orientation of the material type is: [qx = %f, qy = %f, qz = %f, qw = %f]",product_model.pose.orientation.x, product_model.pose.orientation.y, product_model.pose.orientation.z, product_model.pose.orientation.w);
+                            ROS_INFO_ONCE("The position of the first product is: [x = %f, y = %f, z = %f]",product_model.pose.position.x,product_model.pose.position.y,product_model.pose.position.z);
+                            ROS_INFO_ONCE("The orientation of the first product type is: [qx = %f, qy = %f, qz = %f, qw = %f]",product_model.pose.orientation.x, product_model.pose.orientation.y, product_model.pose.orientation.z, product_model.pose.orientation.w);
                             
                             logical_camera_bin_frame = "logical_camera_bin" + std::to_string(j) +"_frame";
 
@@ -195,7 +199,7 @@ int main(int argc, char **argv)
             }
         }
 
-        // Lab6 !!!
+        // Lab6
         if (find_product_succeeded)
         {
             double T_pose[4][4], T_des[4][4];
@@ -204,6 +208,7 @@ int main(int argc, char **argv)
             ROS_INFO_THROTTLE(10, "joint_states position status:[%f, %f, %f, %f, %f, %f]", joint_states.position[0], joint_states.position[1], 
             joint_states.position[2], joint_states.position[3], joint_states.position[4], joint_states.position[5]); //100*100ms=10s
             
+            // joint_states.position[0] is the linear_arm_actuator_joint
             q_pose[0] = joint_states.position[1];
             q_pose[1] = joint_states.position[2];
             q_pose[2] = joint_states.position[3];
@@ -212,10 +217,12 @@ int main(int argc, char **argv)
             q_pose[5] = joint_states.position[6];
             ur_kinematics::forward((double *)&q_pose, (double *)&T_pose);
 
+            ROS_INFO("Below will show T_pose");
+            ROS_INFO("%f, %f, %f", T_des[0][3], T_des[1][3], T_des[2][3]);
 
             T_des[0][3] = goal_pose.pose.position.x;
             T_des[1][3] = goal_pose.pose.position.y;
-            T_des[2][3] = goal_pose.pose.position.z + 0.3; // above part
+            T_des[2][3] = goal_pose.pose.position.z; // above part
             T_des[3][3] = 1.0;
 
             T_des[0][0] = 0.0; T_des[0][1] = -1.0; T_des[0][2] = 0.0;
@@ -224,6 +231,8 @@ int main(int argc, char **argv)
             T_des[3][0] = 0.0; T_des[3][1] = 0.0; T_des[3][2] = 0.0;
 
             int num_sols = ur_kinematics::inverse((double *)&T_des, (double *)&q_des);
+            ROS_INFO("number of solution:%d", num_sols);
+            ROS_INFO("q_des %f, %f, %f", q_des[0][0], q_des[1][0], q_des[2][0]);
 
             joint_trajectory.header.seq = count++;
             joint_trajectory.header.stamp = ros::Time::now();
@@ -264,6 +273,10 @@ int main(int argc, char **argv)
             }
             // How long to take for the movement.
             joint_trajectory.points[1].time_from_start = ros::Duration(1.0);
+
+            joint_trajectory_as.action_goal.goal.trajectory = joint_trajectory;
+            actionlib::SimpleClientGoalState state = trajectory_as.sendGoalAndWait(joint_trajectory_as.action_goal.goal, ros::Duration(30.0), ros::Duration(30.0));
+            ROS_INFO("Action Server returned with status: [%i] %s", state.state_, state.toString().c_str());
         }
 
         ros::spinOnce();

@@ -11,6 +11,7 @@ find_package(catkin REQUIRED COMPONENTS
   ecse_373_ariac
   roscpp
   rviz
+  actionlib
 )
 
 ## System dependencies are found with CMake's conventions
@@ -153,6 +154,7 @@ add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catk
 
 target_link_libraries(${PROJECT_NAME}_node
   ${catkin_LIBRARIES}
+  # ur10_kin
 )
 
 #############
