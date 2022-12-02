@@ -39,6 +39,9 @@ int total_quality_control_sensor_num = 2;
 bool show_first_product_msg_once = true;
 bool has_shown_frist_order_msg = false;
 
+double T_pose[4][4], T_des[4][4];
+double q_pose[6], q_des[8][6];
+
 
 void orderCallback(const osrf_gear::Order::ConstPtr& msg)
 {
@@ -65,6 +68,18 @@ void qualityCameraCallback(const osrf_gear::LogicalCameraImage::ConstPtr& qualit
 void jointStateCallback(const sensor_msgs::JointState::ConstPtr& msgs){
   joint_states = *msgs;
 }
+
+/*
+trajectory_msgs::JointTrajectory generate_traj(geometry_msgs::Pose desired_pose, double lin_act)
+{
+    geometry_msgs::PoseStamped des_pose, goal_pose;
+    des_pose.pose = desired_pose;
+    tf2::doTransform(des_pose, goal_pose, tfStamped);
+    q_pose[0] = joint_states.position[1];
+
+    return 0;
+}
+*/
 
 int main(int argc, char **argv)
 {
@@ -142,9 +157,12 @@ int main(int argc, char **argv)
 
     // Set the frequency of loop in the node
     ros::Rate loop_rate(10);    // f=10HZ, period=100ms
-
+    // ros::MultiThreadedSpinner spinner(4);
+    // spinner.spin();
+    
     while (ros::ok() && service_call_succeeded)
     {
+        // lab5
         if (order_vector.size() > 0)
         {
             osrf_gear::Order first_order = order_vector[0];
@@ -189,7 +207,7 @@ int main(int argc, char **argv)
                             goal_pose.pose.orientation.w = 0.707;
                             goal_pose.pose.orientation.x = 0.0;
                             goal_pose.pose.orientation.y = 0.707;
-                            goal_pose.pose.orientation.z = 0.0;
+                            goal_pose.pose.orientation.z = 0.0;     // goal pose is the position of the item we want
                             ROS_WARN_ONCE("The goal pose infomation will show below");
                             ROS_WARN_STREAM_ONCE(goal_pose);
                             break;
@@ -202,12 +220,9 @@ int main(int argc, char **argv)
         // Lab6
         if (find_product_succeeded)
         {
-            double T_pose[4][4], T_des[4][4];
-            double q_pose[6], q_des[8][6];
-
             ROS_INFO_THROTTLE(10, "joint_states position status:[%f, %f, %f, %f, %f, %f]", joint_states.position[0], joint_states.position[1], 
             joint_states.position[2], joint_states.position[3], joint_states.position[4], joint_states.position[5]); //100*100ms=10s
-            
+
             // joint_states.position[0] is the linear_arm_actuator_joint
             q_pose[0] = joint_states.position[1];
             q_pose[1] = joint_states.position[2];
@@ -220,9 +235,10 @@ int main(int argc, char **argv)
             ROS_INFO("Below will show T_pose");
             ROS_INFO("%f, %f, %f", T_des[0][3], T_des[1][3], T_des[2][3]);
 
+            // Transfer the goal pose to T matrix
             T_des[0][3] = goal_pose.pose.position.x;
             T_des[1][3] = goal_pose.pose.position.y;
-            T_des[2][3] = goal_pose.pose.position.z; // above part
+            T_des[2][3] = goal_pose.pose.position.z;
             T_des[3][3] = 1.0;
 
             T_des[0][0] = 0.0; T_des[0][1] = -1.0; T_des[0][2] = 0.0;
@@ -230,7 +246,10 @@ int main(int argc, char **argv)
             T_des[2][0] = -1.0; T_des[2][1] = 0.0; T_des[2][2] = 0.0;
             T_des[3][0] = 0.0; T_des[3][1] = 0.0; T_des[3][2] = 0.0;
 
+            // Find the solution of inverse kinematics of T matrix of goal pose
             int num_sols = ur_kinematics::inverse((double *)&T_des, (double *)&q_des);
+
+            // Print the solution
             ROS_INFO("number of solution:%d", num_sols);
             ROS_INFO("q_des %f, %f, %f", q_des[0][0], q_des[1][0], q_des[2][0]);
 
@@ -278,7 +297,6 @@ int main(int argc, char **argv)
             actionlib::SimpleClientGoalState state = trajectory_as.sendGoalAndWait(joint_trajectory_as.action_goal.goal, ros::Duration(30.0), ros::Duration(30.0));
             ROS_INFO("Action Server returned with status: [%i] %s", state.state_, state.toString().c_str());
         }
-
         ros::spinOnce();
         loop_rate.sleep();
     }
