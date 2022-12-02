@@ -69,18 +69,6 @@ void jointStateCallback(const sensor_msgs::JointState::ConstPtr& msgs){
   joint_states = *msgs;
 }
 
-/*
-trajectory_msgs::JointTrajectory generate_traj(geometry_msgs::Pose desired_pose, double lin_act)
-{
-    geometry_msgs::PoseStamped des_pose, goal_pose;
-    des_pose.pose = desired_pose;
-    tf2::doTransform(des_pose, goal_pose, tfStamped);
-    q_pose[0] = joint_states.position[1];
-
-    return 0;
-}
-*/
-
 int main(int argc, char **argv)
 {
     ros::init(argc, argv, "ariac_simulation");
@@ -123,6 +111,10 @@ int main(int argc, char **argv)
     // Init subscriber
     ros::Subscriber order_sub = n.subscribe("/ariac/orders", 10, orderCallback);
     ros::Subscriber joint_states_sub = n.subscribe("ariac/arm1/joint_states", 10, jointStateCallback);
+
+    // Init joint state publisher
+    ros::Publisher joint_state_pub = n.advertise<trajectory_msgs::JointTrajectory>("ariac/arm1/arm/command", 1000);
+
 
     // We have 6 logical camera bin, so we need to create 6 callback
     for(int i=0; i < total_logical_camera_bin_num; i++)
@@ -251,8 +243,8 @@ int main(int argc, char **argv)
 
             // Print the solution
             ROS_INFO("number of solution:%d", num_sols);
-            ROS_INFO("q_des %f, %f, %f", q_des[0][0], q_des[1][0], q_des[2][0]);
-
+            ROS_INFO("q_des %f, %f, %f", q_des[0][1], q_des[0][0], q_des[2][0]);
+            
             joint_trajectory.header.seq = count++;
             joint_trajectory.header.stamp = ros::Time::now();
             joint_trajectory.header.frame_id = "/world";
@@ -277,6 +269,7 @@ int main(int argc, char **argv)
                     }
                 }
             }
+            
             // When to start (immediately upon receipt).
             joint_trajectory.points[0].time_from_start = ros::Duration(0.0);
 
@@ -288,14 +281,15 @@ int main(int argc, char **argv)
             joint_trajectory.points[1].positions[0] = joint_states.position[1];
             // The actuators are commanded in an odd order, enter the joint positions in the correct positions
             for (int indy = 0; indy < 6; indy++) {
-            joint_trajectory.points[1].positions[indy + 1] = q_des[q_des_indx][indy];
+                joint_trajectory.points[1].positions[indy + 1] = q_des[q_des_indx][indy];
             }
             // How long to take for the movement.
             joint_trajectory.points[1].time_from_start = ros::Duration(1.0);
+            joint_state_pub.publish(joint_trajectory);
 
-            joint_trajectory_as.action_goal.goal.trajectory = joint_trajectory;
-            actionlib::SimpleClientGoalState state = trajectory_as.sendGoalAndWait(joint_trajectory_as.action_goal.goal, ros::Duration(30.0), ros::Duration(30.0));
-            ROS_INFO("Action Server returned with status: [%i] %s", state.state_, state.toString().c_str());
+            // joint_trajectory_as.action_goal.goal.trajectory = joint_trajectory;
+            // actionlib::SimpleClientGoalState state = trajectory_as.sendGoalAndWait(joint_trajectory_as.action_goal.goal, ros::Duration(10.0), ros::Duration(10.0));
+            // ROS_INFO("Action Server returned with status: [%i] %s", state.state_, state.toString().c_str());
         }
         ros::spinOnce();
         loop_rate.sleep();
