@@ -33,6 +33,7 @@ geometry_msgs::PoseStamped part_pose, goal_pose;
 
 sensor_msgs::JointState joint_states;
 
+// Init global variables
 int total_logical_camera_bin_num = 6;
 int total_logical_camera_agv_num = 2;
 int total_quality_control_sensor_num = 2;
@@ -42,7 +43,7 @@ bool has_shown_frist_order_msg = false;
 double T_pose[4][4];
 double q_pose[6];
 
-
+// Init callback function
 void orderCallback(const osrf_gear::Order::ConstPtr& msg)
 {
     order_vector.push_back(*msg);
@@ -67,6 +68,27 @@ void qualityCameraCallback(const osrf_gear::LogicalCameraImage::ConstPtr& qualit
 // Joint state callback
 void jointStateCallback(const sensor_msgs::JointState::ConstPtr& msgs){
   joint_states = *msgs;
+}
+
+double * chooseIKSolution(double whole_pos_solution[][6])
+{
+    double *pos_solution;
+
+    // Code for selecting a best solution
+    /*
+    int size = sizeof(whole_pos_solution) / sizeof(whole_pos_solution[0]);
+    for (int i=0; i < size; i++)
+    {
+        // Base on the document, if the second joint are in a smaller range would ruled out half solution
+        if (whole_pos_solution[i][1] < 3.14)
+        {
+            ***
+        }
+    }
+    */
+
+    pos_solution = whole_pos_solution[0];   // Now default choose the first solution of 8 solution
+    return pos_solution;
 }
 
 trajectory_msgs::JointTrajectory generateJointTrajectoryFromPos(geometry_msgs::PoseStamped desired_pos, int header_seq)
@@ -115,7 +137,8 @@ trajectory_msgs::JointTrajectory generateJointTrajectoryFromPos(geometry_msgs::P
         }
     }
     
-    // Must select which of the num_sols solutions to use. Just start with the first.
+    // Select the best solution from IK
+    double *q_solution = chooseIKSolution(q_des);
     int q_des_indx = 0;
     // Set the end point for the movement
     result_joint_trajectory.points[1].positions.resize(result_joint_trajectory.joint_names.size());
@@ -133,6 +156,8 @@ trajectory_msgs::JointTrajectory generateJointTrajectoryFromPos(geometry_msgs::P
 
     return result_joint_trajectory;
 }
+
+
 
 int main(int argc, char **argv)
 {
