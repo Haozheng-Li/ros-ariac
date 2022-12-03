@@ -39,8 +39,8 @@ int total_quality_control_sensor_num = 2;
 bool show_first_product_msg_once = true;
 bool has_shown_frist_order_msg = false;
 
-double T_pose[4][4], T_des[4][4];
-double q_pose[6], q_des[8][6];
+double T_pose[4][4];
+double q_pose[6];
 
 
 void orderCallback(const osrf_gear::Order::ConstPtr& msg)
@@ -69,6 +69,71 @@ void jointStateCallback(const sensor_msgs::JointState::ConstPtr& msgs){
   joint_states = *msgs;
 }
 
+trajectory_msgs::JointTrajectory generateJointTrajectoryFromPos(geometry_msgs::PoseStamped desired_pos, int header_seq)
+{
+    trajectory_msgs::JointTrajectory result_joint_trajectory;
+    double T_des[4][4];
+    double q_des[8][6];
+
+    // Transfer the goal pose to T matrix
+    T_des[0][3] = desired_pos.pose.position.x;
+    T_des[1][3] = desired_pos.pose.position.y;
+    T_des[2][3] = desired_pos.pose.position.z;
+    T_des[3][3] = 1.0;
+
+    T_des[0][0] = 0.0; T_des[0][1] = -1.0; T_des[0][2] = 0.0;
+    T_des[1][0] = 0.0; T_des[1][1] = 0.0; T_des[1][2] = 1.0;
+    T_des[2][0] = -1.0; T_des[2][1] = 0.0; T_des[2][2] = 0.0;
+    T_des[3][0] = 0.0; T_des[3][1] = 0.0; T_des[3][2] = 0.0;
+
+    // Find the solution of inverse kinematics of T matrix of goal pose
+    int num_sols = ur_kinematics::inverse((double *)&T_des, (double *)&q_des);
+    
+    // Basic attribute of result_joint_trajectory setting 
+    result_joint_trajectory.header.seq = header_seq;
+    result_joint_trajectory.header.stamp = ros::Time::now();
+    result_joint_trajectory.header.frame_id = "/world";
+
+    result_joint_trajectory.joint_names.clear();
+    result_joint_trajectory.joint_names.push_back("linear_arm_actuator_joint");
+    result_joint_trajectory.joint_names.push_back("shoulder_pan_joint");
+    result_joint_trajectory.joint_names.push_back("shoulder_lift_joint");
+    result_joint_trajectory.joint_names.push_back("elbow_joint");
+    result_joint_trajectory.joint_names.push_back("wrist_1_joint");
+    result_joint_trajectory.joint_names.push_back("wrist_2_joint");
+    result_joint_trajectory.joint_names.push_back("wrist_3_joint");
+
+    // Set a start point
+    result_joint_trajectory.points.resize(2);
+    result_joint_trajectory.points[0].positions.resize(result_joint_trajectory.joint_names.size());
+    for(int indy = 0; indy < result_joint_trajectory.joint_names.size(); indy++){
+        for(int indz = 0; indz < joint_states.name.size(); indz++) {
+            if(result_joint_trajectory.joint_names[indy] == joint_states.name[indz]) {
+                result_joint_trajectory.points[0].positions[indy] = joint_states.position[indz];
+                break;
+            }
+        }
+    }
+    
+    // Must select which of the num_sols solutions to use. Just start with the first.
+    int q_des_indx = 0;
+    // Set the end point for the movement
+    result_joint_trajectory.points[1].positions.resize(result_joint_trajectory.joint_names.size());
+    // Set the linear_arm_actuator_joint from joint_states as it is not part of the inverse kinematics solution.
+    result_joint_trajectory.points[1].positions[0] = joint_states.position[1];
+    // The actuators are commanded in an odd order, enter the joint positions in the correct positions
+    for (int indy = 0; indy < 6; indy++) {
+        result_joint_trajectory.points[1].positions[indy + 1] = q_des[q_des_indx][indy];
+    }
+
+    // When to start (immediately upon receipt).
+    result_joint_trajectory.points[0].time_from_start = ros::Duration(0.0);
+    // How long to take for the movement.
+    result_joint_trajectory.points[1].time_from_start = ros::Duration(1.0);
+
+    return result_joint_trajectory;
+}
+
 int main(int argc, char **argv)
 {
     ros::init(argc, argv, "ariac_simulation");
@@ -90,7 +155,6 @@ int main(int argc, char **argv)
     quality_control_sensor_vector.resize(2);
 
     int count = 0;
-    int action_count = 0;
     int service_call_succeeded;
     int get_loc_call_succeeded;
     bool find_product_succeeded = false;
@@ -225,66 +289,9 @@ int main(int argc, char **argv)
             ur_kinematics::forward((double *)&q_pose, (double *)&T_pose);
 
             ROS_INFO("Below will show T_pose");
-            ROS_INFO("%f, %f, %f", T_des[0][3], T_des[1][3], T_des[2][3]);
+            ROS_INFO("%f, %f, %f", T_pose[0][3], T_pose[1][3], T_pose[2][3]);
 
-            // Transfer the goal pose to T matrix
-            T_des[0][3] = goal_pose.pose.position.x;
-            T_des[1][3] = goal_pose.pose.position.y;
-            T_des[2][3] = goal_pose.pose.position.z;
-            T_des[3][3] = 1.0;
-
-            T_des[0][0] = 0.0; T_des[0][1] = -1.0; T_des[0][2] = 0.0;
-            T_des[1][0] = 0.0; T_des[1][1] = 0.0; T_des[1][2] = 1.0;
-            T_des[2][0] = -1.0; T_des[2][1] = 0.0; T_des[2][2] = 0.0;
-            T_des[3][0] = 0.0; T_des[3][1] = 0.0; T_des[3][2] = 0.0;
-
-            // Find the solution of inverse kinematics of T matrix of goal pose
-            int num_sols = ur_kinematics::inverse((double *)&T_des, (double *)&q_des);
-
-            // Print the solution
-            ROS_INFO("number of solution:%d", num_sols);
-            ROS_INFO("q_des %f, %f, %f", q_des[0][1], q_des[0][0], q_des[2][0]);
-            
-            joint_trajectory.header.seq = count++;
-            joint_trajectory.header.stamp = ros::Time::now();
-            joint_trajectory.header.frame_id = "/world";
-
-            joint_trajectory.joint_names.clear();
-            joint_trajectory.joint_names.push_back("linear_arm_actuator_joint");
-            joint_trajectory.joint_names.push_back("shoulder_pan_joint");
-            joint_trajectory.joint_names.push_back("shoulder_lift_joint");
-            joint_trajectory.joint_names.push_back("elbow_joint");
-            joint_trajectory.joint_names.push_back("wrist_1_joint");
-            joint_trajectory.joint_names.push_back("wrist_2_joint");
-            joint_trajectory.joint_names.push_back("wrist_3_joint");
-
-            // Set a start and end point.
-            joint_trajectory.points.resize(2);
-            joint_trajectory.points[0].positions.resize(joint_trajectory.joint_names.size());
-            for(int indy = 0; indy < joint_trajectory.joint_names.size(); indy++){
-                for(int indz = 0; indz < joint_states.name.size(); indz++) {
-                    if(joint_trajectory.joint_names[indy] == joint_states.name[indz]) {
-                        joint_trajectory.points[0].positions[indy] = joint_states.position[indz];
-                        break;
-                    }
-                }
-            }
-            
-            // When to start (immediately upon receipt).
-            joint_trajectory.points[0].time_from_start = ros::Duration(0.0);
-
-            // Must select which of the num_sols solutions to use. Just start with the first.
-            int q_des_indx = 0;
-            // Set the end point for the movement
-            joint_trajectory.points[1].positions.resize(joint_trajectory.joint_names.size());
-            // Set the linear_arm_actuator_joint from joint_states as it is not part of the inverse kinematics solution.
-            joint_trajectory.points[1].positions[0] = joint_states.position[1];
-            // The actuators are commanded in an odd order, enter the joint positions in the correct positions
-            for (int indy = 0; indy < 6; indy++) {
-                joint_trajectory.points[1].positions[indy + 1] = q_des[q_des_indx][indy];
-            }
-            // How long to take for the movement.
-            joint_trajectory.points[1].time_from_start = ros::Duration(1.0);
+            joint_trajectory = generateJointTrajectoryFromPos(goal_pose, count++);
             joint_state_pub.publish(joint_trajectory);
 
             // joint_trajectory_as.action_goal.goal.trajectory = joint_trajectory;
