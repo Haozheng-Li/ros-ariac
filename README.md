@@ -12,12 +12,12 @@ source devel/setup.bash
 roslaunch ecse_373_ariac ecse_373_ariac.launch
 ```
 
-After ecse_373_ariac_ws has been successfully launched, use this command to launch ariac_simulation:
+After ecse_373_ariac_ws has been successfully launched, use this command to launch cwru_ecse_373_submission:
 
 ```
-cd ~/ariac_simulation_ws 
+cd ~/cwru_ecse_373_submission_ws 
 source devel/setup.bash
-roslaunch ariac_simulation ariac_simulation.launch
+roslaunch cwru_ecse_373_submission cwru_ecse_373_submission.launch
 ```
 
 # Documention of how this lab works

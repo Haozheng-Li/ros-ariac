@@ -16,6 +16,10 @@
 #include "sensor_msgs/JointState.h"
 #include "trajectory_msgs/JointTrajectory.h"
 
+#include "actionlib/client/simple_action_client.h"
+#include "actionlib/client/terminal_state.h"
+#include "control_msgs/FollowJointTrajectoryAction.h"
+
 std_srvs::Trigger begin_comp;
 
 std::vector<osrf_gear::Order> order_vector;
@@ -23,12 +27,14 @@ std::vector<osrf_gear::LogicalCameraImage> logic_camera_bin_vector, logic_camera
 
 osrf_gear::GetMaterialLocations get_loc_message;
 osrf_gear::LogicalCameraImage camera_message;
+control_msgs::FollowJointTrajectoryAction joint_trajectory_as;
 
 geometry_msgs::TransformStamped tfStamped;
 geometry_msgs::PoseStamped part_pose, goal_pose;
 std::vector<geometry_msgs::PoseStamped> goal_pose_vector;
 
 sensor_msgs::JointState joint_states;
+
 
 // Init global variables
 int total_logical_camera_bin_num = 6;
@@ -171,7 +177,7 @@ trajectory_msgs::JointTrajectory generateJointTrajectoryFromPos(geometry_msgs::P
 
 int main(int argc, char **argv)
 {
-    ros::init(argc, argv, "ariac_simulation");
+    ros::init(argc, argv, "cwru_ecse_373_submission");
    
     // Init the node
     ros::NodeHandle n;
@@ -203,14 +209,11 @@ int main(int argc, char **argv)
     // Init ServiceClient
     ros::ServiceClient begin_client = n.serviceClient<std_srvs::Trigger>("/ariac/start_competition");
     ros::ServiceClient get_loc_client = n.serviceClient<osrf_gear::GetMaterialLocations>("/ariac/material_locations");
+    actionlib::SimpleActionClient<control_msgs::FollowJointTrajectoryAction> trajectory_as("ariac/arm1/arm/follow_joint_trajectory", true);
 
     // Init subscriber
     ros::Subscriber order_sub = n.subscribe("/ariac/orders", 10, orderCallback);
     ros::Subscriber joint_states_sub = n.subscribe("ariac/arm1/joint_states", 10, jointStateCallback);
-
-    // Init joint state publisher
-    ros::Publisher joint_state_pub = n.advertise<trajectory_msgs::JointTrajectory>("ariac/arm1/arm/command", 1000);
-
 
     // We have 6 logical camera bin, so we need to create 6 callback
     for(int i=0; i < total_logical_camera_bin_num; i++)
@@ -297,9 +300,10 @@ int main(int argc, char **argv)
             if (goal_material_index < goal_pose_vector.size())
             {
                 joint_trajectory = generateJointTrajectoryFromPos(goal_pose_vector[goal_material_index], count++);
-                joint_state_pub.publish(joint_trajectory);
+                joint_trajectory_as.action_goal.goal.trajectory = joint_trajectory;
+                actionlib::SimpleClientGoalState state = trajectory_as.sendGoalAndWait(joint_trajectory_as.action_goal.goal, ros::Duration(30.0), ros::Duration(30.0));
+                ROS_INFO("Action Server returned with status: [%i] %s", state.state_, state.toString().c_str());
             }
-
             goal_material_index++;
         }
         ros::spinOnce();
