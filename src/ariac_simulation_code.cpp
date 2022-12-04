@@ -16,10 +16,6 @@
 #include "sensor_msgs/JointState.h"
 #include "trajectory_msgs/JointTrajectory.h"
 
-#include "actionlib/client/simple_action_client.h"
-#include "actionlib/client/terminal_state.h"
-#include "control_msgs/FollowJointTrajectoryAction.h"
-
 std_srvs::Trigger begin_comp;
 
 std::vector<osrf_gear::Order> order_vector;
@@ -30,6 +26,7 @@ osrf_gear::LogicalCameraImage camera_message;
 
 geometry_msgs::TransformStamped tfStamped;
 geometry_msgs::PoseStamped part_pose, goal_pose;
+std::vector<geometry_msgs::PoseStamped> goal_pose_vector;
 
 sensor_msgs::JointState joint_states;
 
@@ -70,23 +67,38 @@ void jointStateCallback(const sensor_msgs::JointState::ConstPtr& msgs){
   joint_states = *msgs;
 }
 
+geometry_msgs::PoseStamped transformPosition(geometry_msgs::PoseStamped ori_item_pos, std::string sub_frame_name)
+{
+    // Init listener and buffer
+    tf2_ros::Buffer tfBuffer;
+    tf2_ros::TransformListener tfListener(tfBuffer);
+
+    geometry_msgs::PoseStamped transformed_pos;
+
+    try {
+        tfStamped = tfBuffer.lookupTransform("arm1_base_link", sub_frame_name, ros::Time(0.0), ros::Duration(1.0));
+        ROS_DEBUG("Transform to [%s] from [%s]", tfStamped.header.frame_id.c_str(), tfStamped.child_frame_id.c_str());
+    } 
+    catch (tf2::TransformException &ex) {
+        ROS_ERROR("%s", ex.what());
+    }
+
+    // Transform coordinate 
+    tf2::doTransform(ori_item_pos, transformed_pos, tfStamped);
+
+    // Fix the position
+    transformed_pos.pose.position.z += 0.10; 
+    transformed_pos.pose.orientation.w = 0.707;
+    transformed_pos.pose.orientation.x = 0.0;
+    transformed_pos.pose.orientation.y = 0.707;
+    transformed_pos.pose.orientation.z = 0.0;   
+
+    return transformed_pos;
+}
+
 double * chooseIKSolution(double whole_pos_solution[][6])
 {
     double *pos_solution;
-
-    // Code for selecting a best solution
-    /*
-    int size = sizeof(whole_pos_solution) / sizeof(whole_pos_solution[0]);
-    for (int i=0; i < size; i++)
-    {
-        // Base on the document, if the second joint are in a smaller range would ruled out half solution
-        if (whole_pos_solution[i][1] < 3.14)
-        {
-            ***
-        }
-    }
-    */
-
     pos_solution = whole_pos_solution[0];   // Now default choose the first solution of 8 solution
     return pos_solution;
 }
@@ -157,7 +169,6 @@ trajectory_msgs::JointTrajectory generateJointTrajectoryFromPos(geometry_msgs::P
 }
 
 
-
 int main(int argc, char **argv)
 {
     ros::init(argc, argv, "ariac_simulation");
@@ -179,6 +190,7 @@ int main(int argc, char **argv)
     quality_control_sensor_vector.resize(2);
 
     int count = 0;
+    int goal_material_index = 0;
     int service_call_succeeded;
     int get_loc_call_succeeded;
     bool find_product_succeeded = false;
@@ -187,14 +199,10 @@ int main(int argc, char **argv)
     ros::Subscriber camera_sub[6];
     trajectory_msgs::JointTrajectoryPoint desired;
     trajectory_msgs::JointTrajectory joint_trajectory;
-    
-    control_msgs::FollowJointTrajectoryAction joint_trajectory_as;
 
     // Init ServiceClient
     ros::ServiceClient begin_client = n.serviceClient<std_srvs::Trigger>("/ariac/start_competition");
     ros::ServiceClient get_loc_client = n.serviceClient<osrf_gear::GetMaterialLocations>("/ariac/material_locations");
-
-    actionlib::SimpleActionClient<control_msgs::FollowJointTrajectoryAction>trajectory_as("ariac/arm/follow_joint_trajectory", true);
 
     // Init subscriber
     ros::Subscriber order_sub = n.subscribe("/ariac/orders", 10, orderCallback);
@@ -237,8 +245,6 @@ int main(int argc, char **argv)
 
     // Set the frequency of loop in the node
     ros::Rate loop_rate(10);    // f=10HZ, period=100ms
-    // ros::MultiThreadedSpinner spinner(4);
-    // spinner.spin();
     
     while (ros::ok() && service_call_succeeded)
     {
@@ -269,28 +275,14 @@ int main(int argc, char **argv)
                             ROS_INFO_ONCE("The orientation of the first product type is: [qx = %f, qy = %f, qz = %f, qw = %f]",product_model.pose.orientation.x, product_model.pose.orientation.y, product_model.pose.orientation.z, product_model.pose.orientation.w);
                             
                             logical_camera_bin_frame = "logical_camera_bin" + std::to_string(j) +"_frame";
-
-                            try {
-                                tfStamped = tfBuffer.lookupTransform("arm1_base_link", logical_camera_bin_frame, ros::Time(0.0), ros::Duration(1.0));
-                                ROS_DEBUG("Transform to [%s] from [%s]", tfStamped.header.frame_id.c_str(), tfStamped.child_frame_id.c_str());
-                            } 
-                            catch (tf2::TransformException &ex) {
-                                ROS_ERROR("%s", ex.what());
-                            }
-
                             // Transform coordinate 
                             part_pose.pose = product_model.pose;
-                            tf2::doTransform(part_pose, goal_pose, tfStamped);
+                            goal_pose = transformPosition(part_pose, logical_camera_bin_frame);
 
-                            // Fix the position
-                            goal_pose.pose.position.z += 0.10; // 10 cm above the part
-                            goal_pose.pose.orientation.w = 0.707;
-                            goal_pose.pose.orientation.x = 0.0;
-                            goal_pose.pose.orientation.y = 0.707;
-                            goal_pose.pose.orientation.z = 0.0;     // goal pose is the position of the item we want
                             ROS_WARN_ONCE("The goal pose infomation will show below");
                             ROS_WARN_STREAM_ONCE(goal_pose);
-                            break;
+
+                            goal_pose_vector.push_back(goal_pose);
                         }
                     }
                 }
@@ -302,25 +294,13 @@ int main(int argc, char **argv)
         {
             ROS_INFO_THROTTLE(10, "joint_states position status:[%f, %f, %f, %f, %f, %f]", joint_states.position[0], joint_states.position[1], 
             joint_states.position[2], joint_states.position[3], joint_states.position[4], joint_states.position[5]); //100*100ms=10s
+            if (goal_material_index < goal_pose_vector.size())
+            {
+                joint_trajectory = generateJointTrajectoryFromPos(goal_pose_vector[goal_material_index], count++);
+                joint_state_pub.publish(joint_trajectory);
+            }
 
-            // joint_states.position[0] is the linear_arm_actuator_joint
-            q_pose[0] = joint_states.position[1];
-            q_pose[1] = joint_states.position[2];
-            q_pose[2] = joint_states.position[3];
-            q_pose[3] = joint_states.position[4];
-            q_pose[4] = joint_states.position[5];
-            q_pose[5] = joint_states.position[6];
-            ur_kinematics::forward((double *)&q_pose, (double *)&T_pose);
-
-            ROS_INFO("Below will show T_pose");
-            ROS_INFO("%f, %f, %f", T_pose[0][3], T_pose[1][3], T_pose[2][3]);
-
-            joint_trajectory = generateJointTrajectoryFromPos(goal_pose, count++);
-            joint_state_pub.publish(joint_trajectory);
-
-            // joint_trajectory_as.action_goal.goal.trajectory = joint_trajectory;
-            // actionlib::SimpleClientGoalState state = trajectory_as.sendGoalAndWait(joint_trajectory_as.action_goal.goal, ros::Duration(10.0), ros::Duration(10.0));
-            // ROS_INFO("Action Server returned with status: [%i] %s", state.state_, state.toString().c_str());
+            goal_material_index++;
         }
         ros::spinOnce();
         loop_rate.sleep();
