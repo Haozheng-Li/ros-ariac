@@ -210,6 +210,7 @@ int main(int argc, char **argv)
     ros::ServiceClient begin_client = n.serviceClient<std_srvs::Trigger>("/ariac/start_competition");
     ros::ServiceClient get_loc_client = n.serviceClient<osrf_gear::GetMaterialLocations>("/ariac/material_locations");
     actionlib::SimpleActionClient<control_msgs::FollowJointTrajectoryAction> trajectory_as("ariac/arm1/arm/follow_joint_trajectory", true);
+    trajectory_as.waitForServer();
 
     // Init subscriber
     ros::Subscriber order_sub = n.subscribe("/ariac/orders", 10, orderCallback);
@@ -228,29 +229,28 @@ int main(int argc, char **argv)
     ros:: Subscriber quality_camera_sub1 = n.subscribe<osrf_gear::LogicalCameraImage>("/ariac/quality_control_sensor_1", 10, boost::bind(qualityCameraCallback, _1, 0));
     ros:: Subscriber quality_camera_sub2 = n.subscribe<osrf_gear::LogicalCameraImage>("/ariac/quality_control_sensor_2", 10, boost::bind(qualityCameraCallback, _1, 1));
 
-    // Service call status
-    service_call_succeeded = begin_client.call(begin_comp);
-    if(service_call_succeeded == 0)
-    {
-        ROS_ERROR("Competition service call failed!, Please check the competion service!!!!");
-    }
-    else
-    {
-        if(begin_comp.response.success)
-        {
-            ROS_INFO("Competition service called successfully: %s", begin_comp.response.message.c_str());
-        }
-        else
-        {
-            ROS_WARN("Competition service returned failure: %s", begin_comp.response.message.c_str());
-        }
-    }
 
     // Set the frequency of loop in the node
     ros::Rate loop_rate(10);    // f=10HZ, period=100ms
-    
-    while (ros::ok() && service_call_succeeded)
+
+    while (ros::ok())
     {
+        // Service call status
+        service_call_succeeded = begin_client.call(begin_comp);
+        if(service_call_succeeded == 0){
+            ROS_ERROR_THROTTLE(10, "Competition service call failed!, Please check the competion service!!!!");
+        }
+        else{
+            if(begin_comp.response.success)
+            {
+                ROS_INFO_THROTTLE(10, "Competition service called successfully: %s", begin_comp.response.message.c_str());
+            }
+            else
+            {
+                ROS_WARN_THROTTLE(10, "Competition service returned failure: %s", begin_comp.response.message.c_str());
+            }
+        }
+        
         // lab5
         if (order_vector.size() > 0)
         {
@@ -284,8 +284,11 @@ int main(int argc, char **argv)
 
                             ROS_WARN_ONCE("The goal pose infomation will show below");
                             ROS_WARN_STREAM_ONCE(goal_pose);
-
-                            goal_pose_vector.push_back(goal_pose);
+                            if (goal_pose_vector.size() < camera_message.models.size())
+                            {
+                                goal_pose_vector.push_back(goal_pose);
+                            }
+                            
                         }
                     }
                 }
@@ -303,8 +306,12 @@ int main(int argc, char **argv)
                 joint_trajectory_as.action_goal.goal.trajectory = joint_trajectory;
                 actionlib::SimpleClientGoalState state = trajectory_as.sendGoalAndWait(joint_trajectory_as.action_goal.goal, ros::Duration(30.0), ros::Duration(30.0));
                 ROS_INFO("Action Server returned with status: [%i] %s", state.state_, state.toString().c_str());
+                goal_material_index++;
             }
-            goal_material_index++;
+            else{
+                goal_material_index = 0;
+            }
+            
         }
         ros::spinOnce();
         loop_rate.sleep();

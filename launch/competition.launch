@@ -1,4 +1,4 @@
 <launch>
+    <node name= "cwru_ecse_373_submission_node" pkg= "cwru_ecse_373_submission" type= "cwru_ecse_373_submission_node" output= "screen" required="true"/> 
     <!-- <include file="$(find ecse_373_ariac)/launch/ecse_373_ariac.launch" /> -->
-    <node name= "cwru_ecse_373_submission_node" pkg= "cwru_ecse_373_submission" type= "cwru_ecse_373_submission_node" output= "screen"/> 
 </launch>
