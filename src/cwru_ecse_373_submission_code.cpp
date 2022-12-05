@@ -246,11 +246,19 @@ void gripAndRealeaseItem(ros::ServiceClient *gripper_client, geometry_msgs::Pose
     stop_rate.sleep();
     stop_rate.sleep();
 
-    desired_pos.pose.position.z = item_position.pose.position.z - 0.08;
+    desired_pos.pose.position.z = item_position.pose.position.z - 0.075;
     moveToPos(action_client, desired_pos);
 
     gripperControl(gripper_client, false);
-    
+
+    stop_rate.sleep();
+    stop_rate.sleep();
+
+    desired_pos = item_position;
+    moveToPos(action_client, desired_pos);
+    stop_rate.sleep();
+    stop_rate.sleep();
+
 }
 
 int main(int argc, char **argv)
@@ -387,16 +395,14 @@ int main(int argc, char **argv)
 
             loop_rate.sleep();
             loop_rate.sleep();
-            loop_rate.sleep();
 
             gripAndRealeaseItem(&gripper_client, goal_pose_vector[3], loop_rate, &trajectory_as);
             loop_rate.sleep();
             loop_rate.sleep();
-            loop_rate.sleep();
 
-            moveToPos(&trajectory_as, goal_pose_vector[3]);
 
-            loop_rate.sleep();
+            moveToPos(&trajectory_as, goal_pose_vector[4]);
+
             loop_rate.sleep();
             loop_rate.sleep();
 
