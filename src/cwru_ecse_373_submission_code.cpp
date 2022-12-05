@@ -222,7 +222,7 @@ void gripperControl(ros::ServiceClient *gripper_client, bool do_attach)
     }
 }
 
-void gripAndRealeaseItem(ros::ServiceClient *gripper_client, geometry_msgs::PoseStamped item_position, ros::Rate stop_rate, int count, actionlib::SimpleActionClient<control_msgs::FollowJointTrajectoryAction> *action_client)
+void gripAndRealeaseItem(ros::ServiceClient *gripper_client, geometry_msgs::PoseStamped item_position, ros::Rate stop_rate, actionlib::SimpleActionClient<control_msgs::FollowJointTrajectoryAction> *action_client)
 {
     geometry_msgs::PoseStamped desired_pos; 
     trajectory_msgs::JointTrajectory joint_trajectory;
@@ -234,7 +234,7 @@ void gripAndRealeaseItem(ros::ServiceClient *gripper_client, geometry_msgs::Pose
     stop_rate.sleep();
     stop_rate.sleep();
 
-    desired_pos.pose.position.z = item_position.pose.position.z - 0.078;
+    desired_pos.pose.position.z = item_position.pose.position.z - 0.08;
     moveToPos(action_client, desired_pos);
 
     stop_rate.sleep();
@@ -246,7 +246,7 @@ void gripAndRealeaseItem(ros::ServiceClient *gripper_client, geometry_msgs::Pose
     stop_rate.sleep();
     stop_rate.sleep();
 
-    desired_pos.pose.position.z = item_position.pose.position.z - 0.078;
+    desired_pos.pose.position.z = item_position.pose.position.z - 0.08;
     moveToPos(action_client, desired_pos);
 
     gripperControl(gripper_client, false);
@@ -389,7 +389,7 @@ int main(int argc, char **argv)
             loop_rate.sleep();
             loop_rate.sleep();
 
-            gripAndRealeaseItem(&gripper_client, goal_pose_vector[3], loop_rate, count, &trajectory_as);
+            gripAndRealeaseItem(&gripper_client, goal_pose_vector[3], loop_rate, &trajectory_as);
             loop_rate.sleep();
             loop_rate.sleep();
             loop_rate.sleep();
@@ -400,9 +400,7 @@ int main(int argc, char **argv)
             loop_rate.sleep();
             loop_rate.sleep();
 
-            gripAndRealeaseItem(&gripper_client, goal_pose_vector[4], loop_rate, count, &trajectory_as);
-
-            // gripItem(&gripper_client, desired_pos);
+            gripAndRealeaseItem(&gripper_client, goal_pose_vector[4], loop_rate, &trajectory_as);
             
         }
         ros::spinOnce();
