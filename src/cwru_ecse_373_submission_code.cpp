@@ -33,15 +33,18 @@ osrf_gear::LogicalCameraImage camera_message;
 osrf_gear::VacuumGripperState gripper_state;
 control_msgs::FollowJointTrajectoryAction joint_trajectory_as;
 
+
 geometry_msgs::TransformStamped tfStamped;
 geometry_msgs::PoseStamped part_pose, goal_pose;
+
 std::vector<geometry_msgs::PoseStamped> goal_pose_vector;
 
 sensor_msgs::JointState joint_states;
-
+trajectory_msgs::JointTrajectory joint_trajectory;
 
 // Init global variables
 int count = 0;
+double *q_solution;
 int total_logical_camera_bin_num = 6;
 int total_logical_camera_agv_num = 2;
 int total_quality_control_sensor_num = 2;
@@ -79,16 +82,10 @@ void gripperCallBack(const osrf_gear::VacuumGripperState::ConstPtr& msgs){
     gripper_state = *msgs;
 }
 
-geometry_msgs::PoseStamped transformPosition(geometry_msgs::PoseStamped ori_item_pos, std::string target_frame, std::string source_frame)
+void transformPosition(geometry_msgs::PoseStamped *ori_pos, geometry_msgs::PoseStamped *transformed_pos, std::string target_frame, std::string source_frame, tf2_ros::Buffer *buffer)
 {
-    // Init listener and buffer
-    tf2_ros::Buffer tfBuffer;
-    tf2_ros::TransformListener tfListener(tfBuffer);
-
-    geometry_msgs::PoseStamped transformed_pos;
-
     try {
-        tfStamped = tfBuffer.lookupTransform(target_frame, source_frame, ros::Time(0.0), ros::Duration(1.0));
+        tfStamped = buffer->lookupTransform(target_frame, source_frame, ros::Time(0.0), ros::Duration(1.0));
         ROS_DEBUG("Transform to [%s] from [%s]", tfStamped.header.frame_id.c_str(), tfStamped.child_frame_id.c_str());
     } 
     catch (tf2::TransformException &ex) {
@@ -96,22 +93,19 @@ geometry_msgs::PoseStamped transformPosition(geometry_msgs::PoseStamped ori_item
     }
 
     // Transform coordinate 
-    tf2::doTransform(ori_item_pos, transformed_pos, tfStamped);
+    tf2::doTransform(*ori_pos, *transformed_pos, tfStamped);
 
     // Fix the position
-    transformed_pos.pose.position.z += 0.10;
-    transformed_pos.pose.orientation.w = 0.707;
-    transformed_pos.pose.orientation.x = 0.0;
-    transformed_pos.pose.orientation.y = 0.707;
-    transformed_pos.pose.orientation.z = 0.0;   
-
-    return transformed_pos;
+    transformed_pos->pose.position.z += 0.10;
+    transformed_pos->pose.orientation.w = 0.707;
+    transformed_pos->pose.orientation.x = 0.0;
+    transformed_pos->pose.orientation.y = 0.707;
+    transformed_pos->pose.orientation.z = 0.0;   
 }
 
 
-double * chooseIKSolution(double pos_solutions[][6], int solution_num)
+void chooseIKSolution(double pos_solutions[][6], int solution_num, double *pos_solution)
 {
-    double *pos_solution;
     int best_solution_index = 0;
 	for (int index=0; index < solution_num; index++)
 	{
@@ -123,12 +117,10 @@ double * chooseIKSolution(double pos_solutions[][6], int solution_num)
 	}
     // pos_solution = pos_solutions[best_solution_index];
     pos_solution = pos_solutions[0];   // Now default choose the first solution of 8 solution
-    return pos_solution;
 }
 
-trajectory_msgs::JointTrajectory generateJointTrajectoryFromPos(geometry_msgs::PoseStamped desired_pos, int header_seq)
+void generateJointTrajectoryFromPos(geometry_msgs::PoseStamped desired_pos, double base_movement=0)
 {
-    trajectory_msgs::JointTrajectory result_joint_trajectory;
     double T_des[4][4];
     double q_des[8][6];
 
@@ -146,111 +138,104 @@ trajectory_msgs::JointTrajectory generateJointTrajectoryFromPos(geometry_msgs::P
     // Find the solution of inverse kinematics of T matrix of goal pose
     int solution_num = ur_kinematics::inverse((double *)&T_des, (double *)&q_des);
     
-    // Basic attribute of result_joint_trajectory setting 
-    result_joint_trajectory.header.seq = header_seq;
-    result_joint_trajectory.header.stamp = ros::Time::now();
-    result_joint_trajectory.header.frame_id = "/world";
+    // Basic attribute of joint_trajectory setting 
+    joint_trajectory.header.seq = count++;
+    joint_trajectory.header.stamp = ros::Time::now();
+    joint_trajectory.header.frame_id = "/world";
 
-    result_joint_trajectory.joint_names.clear();
-    result_joint_trajectory.joint_names.push_back("linear_arm_actuator_joint");
-    result_joint_trajectory.joint_names.push_back("shoulder_pan_joint");
-    result_joint_trajectory.joint_names.push_back("shoulder_lift_joint");
-    result_joint_trajectory.joint_names.push_back("elbow_joint");
-    result_joint_trajectory.joint_names.push_back("wrist_1_joint");
-    result_joint_trajectory.joint_names.push_back("wrist_2_joint");
-    result_joint_trajectory.joint_names.push_back("wrist_3_joint");
-
+    joint_trajectory.joint_names.clear();
+    joint_trajectory.joint_names.push_back("linear_arm_actuator_joint");
+    joint_trajectory.joint_names.push_back("shoulder_pan_joint");
+    joint_trajectory.joint_names.push_back("shoulder_lift_joint");
+    joint_trajectory.joint_names.push_back("elbow_joint");
+    joint_trajectory.joint_names.push_back("wrist_1_joint");
+    joint_trajectory.joint_names.push_back("wrist_2_joint");
+    joint_trajectory.joint_names.push_back("wrist_3_joint");
     // Set a start point
-    result_joint_trajectory.points.resize(2);
-    result_joint_trajectory.points[0].positions.resize(result_joint_trajectory.joint_names.size());
-    for(int indy = 0; indy < result_joint_trajectory.joint_names.size(); indy++){
+    joint_trajectory.points.resize(2);
+    joint_trajectory.points[0].positions.resize(joint_trajectory.joint_names.size());
+    for(int indy = 0; indy < joint_trajectory.joint_names.size(); indy++){
         for(int indz = 0; indz < joint_states.name.size(); indz++) {
-            if(result_joint_trajectory.joint_names[indy] == joint_states.name[indz]) {
-                result_joint_trajectory.points[0].positions[indy] = joint_states.position[indz];
+            if(joint_trajectory.joint_names[indy] == joint_states.name[indz]) {
+                joint_trajectory.points[0].positions[indy] = joint_states.position[indz];
                 break;
             }
         }
     }
-    
     // Select the best solution from IK
-    double *q_solution = chooseIKSolution(q_des, solution_num);
+    // chooseIKSolution(q_des, solution_num, q_solution);
+    double *q_solution=q_des[0];
     // Set the end point for the movement
-    result_joint_trajectory.points[1].positions.resize(result_joint_trajectory.joint_names.size());
+    joint_trajectory.points[1].positions.resize(joint_trajectory.joint_names.size());
     // Set the linear_arm_actuator_joint from joint_states as it is not part of the inverse kinematics solution.
-    result_joint_trajectory.points[1].positions[0] = joint_states.position[1];
+    joint_trajectory.points[1].positions[0] = joint_states.position[1];
     // The actuators are commanded in an odd order, enter the joint positions in the correct positions
     for (int indy = 0; indy < 6; indy++) {
-        result_joint_trajectory.points[1].positions[indy + 1] = q_solution[indy];
+        joint_trajectory.points[1].positions[indy + 1] = q_solution[indy];
     }
+    joint_trajectory.points[1].positions[0] = base_movement;
 
     // When to start (immediately upon receipt).
-    result_joint_trajectory.points[0].time_from_start = ros::Duration(0.0);
+    joint_trajectory.points[0].time_from_start = ros::Duration(0.0);
     // How long to take for the movement.
-    result_joint_trajectory.points[1].time_from_start = ros::Duration(1.0);
-
-    return result_joint_trajectory;
+    joint_trajectory.points[1].time_from_start = ros::Duration(1.0);
 }
 
-trajectory_msgs::JointTrajectory  moveBaseToPos(double base_position)
+void moveBaseToPos(double base_position)
 {
-    trajectory_msgs::JointTrajectory result_joint_trajectory;
-    result_joint_trajectory.header.seq = count++;
-    result_joint_trajectory.header.stamp = ros::Time::now();
-    result_joint_trajectory.header.frame_id = "/world";
+    joint_trajectory.header.seq = count++;
+    joint_trajectory.header.stamp = ros::Time::now();
+    joint_trajectory.header.frame_id = "/world";
 
-    result_joint_trajectory.joint_names.clear();
-    result_joint_trajectory.joint_names.push_back("linear_arm_actuator_joint");
-    result_joint_trajectory.joint_names.push_back("shoulder_pan_joint");
-    result_joint_trajectory.joint_names.push_back("shoulder_lift_joint");
-    result_joint_trajectory.joint_names.push_back("elbow_joint");
-    result_joint_trajectory.joint_names.push_back("wrist_1_joint");
-    result_joint_trajectory.joint_names.push_back("wrist_2_joint");
-    result_joint_trajectory.joint_names.push_back("wrist_3_joint");
+    joint_trajectory.joint_names.clear();
+    joint_trajectory.joint_names.push_back("linear_arm_actuator_joint");
+    joint_trajectory.joint_names.push_back("shoulder_pan_joint");
+    joint_trajectory.joint_names.push_back("shoulder_lift_joint");
+    joint_trajectory.joint_names.push_back("elbow_joint");
+    joint_trajectory.joint_names.push_back("wrist_1_joint");
+    joint_trajectory.joint_names.push_back("wrist_2_joint");
+    joint_trajectory.joint_names.push_back("wrist_3_joint");
 
-	result_joint_trajectory.points.resize(2);
-	result_joint_trajectory.points[0].positions.resize(result_joint_trajectory.joint_names.size());
-	result_joint_trajectory.points[1].positions.resize(result_joint_trajectory.joint_names.size());
-	for (int indy = 0; indy < result_joint_trajectory.joint_names.size(); indy++)
+	joint_trajectory.points.resize(2);
+	joint_trajectory.points[0].positions.resize(joint_trajectory.joint_names.size());
+	joint_trajectory.points[1].positions.resize(joint_trajectory.joint_names.size());
+	for (int indy = 0; indy < joint_trajectory.joint_names.size(); indy++)
 	{
 		for (int indz = 0; indz < joint_states.name.size(); indz++)
 		{
-			if (result_joint_trajectory.joint_names[indy] == joint_states.name[indz])
+			if (joint_trajectory.joint_names[indy] == joint_states.name[indz])
 			{
-				result_joint_trajectory.points[0].positions[indy] = joint_states.position[indz];
-				result_joint_trajectory.points[1].positions[indy] = joint_states.position[indz];
+				joint_trajectory.points[0].positions[indy] = joint_states.position[indz];
+				joint_trajectory.points[1].positions[indy] = joint_states.position[indz];
 				break;
 			}
         }
     }
-    result_joint_trajectory.points[1].positions[0] = base_position;
+    joint_trajectory.points[1].positions[0] = base_position;
     // When to start (immediately upon receipt).
-    result_joint_trajectory.points[0].time_from_start = ros::Duration(0.0);
+    joint_trajectory.points[0].time_from_start = ros::Duration(0.0);
     // How long to take for the movement.
-    result_joint_trajectory.points[1].time_from_start = ros::Duration(4.0);
-
-    return result_joint_trajectory;
+    joint_trajectory.points[1].time_from_start = ros::Duration(4.0);
 }
 
 
-void doTarjectoryAction(actionlib::SimpleActionClient<control_msgs::FollowJointTrajectoryAction> *action_client, trajectory_msgs::JointTrajectory trajectory)
+void doTarjectoryAction(actionlib::SimpleActionClient<control_msgs::FollowJointTrajectoryAction> *action_client)
 {
-    control_msgs::FollowJointTrajectoryAction joint_trajectory_action;
-    joint_trajectory_action.action_goal.goal.trajectory = trajectory;
-    actionlib::SimpleClientGoalState state = action_client->sendGoalAndWait(joint_trajectory_action.action_goal.goal, ros::Duration(30.0), ros::Duration(30.0));
+    joint_trajectory_as.action_goal.goal.trajectory = joint_trajectory;
+    actionlib::SimpleClientGoalState state = action_client->sendGoalAndWait(joint_trajectory_as.action_goal.goal, ros::Duration(30.0), ros::Duration(30.0));
     ROS_INFO("Action Server returned with status: [%i] %s", state.state_, state.toString().c_str());
 }
 
-void moveToPos(actionlib::SimpleActionClient<control_msgs::FollowJointTrajectoryAction> *action_client, geometry_msgs::PoseStamped desired_pos, double base_position=0)
+void moveToPos(actionlib::SimpleActionClient<control_msgs::FollowJointTrajectoryAction> *action_client, geometry_msgs::PoseStamped desired_pos, double base_movement=0)
 {
-    trajectory_msgs::JointTrajectory joint_trajectory;
-    if (base_position)
-    {
-        joint_trajectory = moveBaseToPos(base_position);
-        doTarjectoryAction(action_client, joint_trajectory);
-    }
+    // if (base_position)
+    // {
+    //     moveBaseToPos(base_position);
+    //     doTarjectoryAction(action_client);
+    // }
 
-    joint_trajectory = generateJointTrajectoryFromPos(desired_pos, count++);
-    doTarjectoryAction(action_client, joint_trajectory);
+    generateJointTrajectoryFromPos(desired_pos, base_movement);
+    doTarjectoryAction(action_client);
 }
 
 
@@ -273,7 +258,6 @@ void gripperControl(ros::ServiceClient *gripper_client, bool do_attach)
 void gripItem(ros::ServiceClient *gripper_client, geometry_msgs::PoseStamped item_position, ros::Rate stop_rate, actionlib::SimpleActionClient<control_msgs::FollowJointTrajectoryAction> *action_client, int realease)
 {
     geometry_msgs::PoseStamped desired_pos; 
-    trajectory_msgs::JointTrajectory joint_trajectory;
     desired_pos = item_position;
     moveToPos(action_client, desired_pos);
 
@@ -417,7 +401,7 @@ int main(int argc, char **argv)
                             // Transform coordinate 
                             part_pose.pose = product_model.pose;
                             logical_camera_bin_frame = "logical_camera_bin" + std::to_string(j) +"_frame";
-                            goal_pose = transformPosition(part_pose,"arm1_base_link", logical_camera_bin_frame);
+                            transformPosition(&part_pose, &goal_pose, "arm1_base_link", logical_camera_bin_frame, &tfBuffer);
 
                             ROS_WARN_ONCE("The goal pose infomation will show below");
                             ROS_WARN_STREAM_ONCE(goal_pose);
@@ -439,38 +423,9 @@ int main(int argc, char **argv)
 
             if (once)
                 {
-                geometry_msgs::PoseStamped testPos = goal_pose_vector[3];
+                geometry_msgs::PoseStamped testPos = goal_pose_vector[0];
 
                 moveToPos(&trajectory_as, testPos);
-
-                loop_rate.sleep();
-                loop_rate.sleep();
-
-                gripItem(&gripper_client, testPos, loop_rate, &trajectory_as, 0);
-                loop_rate.sleep();
-                loop_rate.sleep();
-
-                
-                doTarjectoryAction(&trajectory_as, moveBaseToPos(-2.3));
-
-                loop_rate.sleep();
-                loop_rate.sleep();
-                loop_rate.sleep();
-                loop_rate.sleep();
-                loop_rate.sleep();
-                loop_rate.sleep();
-
-                geometry_msgs::PoseStamped drop_down_pose = transformPosition(testPos, "arm1_base_link", "logical_camera_agv2_frame");  // ?
-
-                // drop_down_pose.pose.position.z += 0.5;
-
-                moveToPos(&trajectory_as, drop_down_pose);
-                
-                loop_rate.sleep();
-                loop_rate.sleep();
-                loop_rate.sleep();
-                loop_rate.sleep();
-
                 once = false;
             }
 
