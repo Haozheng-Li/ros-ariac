@@ -1,10 +1,9 @@
-# Ecse373 Team 1 Lab5
+# ros-ariac
 
 
+## Launch this project
 
-## Launch this lab
-
-Before launch this lab, launch the ecse_373_ariac_ws package first.
+Before launch this lab, launch the ariac_ws package first.
 
 ```
 cd ~/ecse_373_ariac_ws/
